@@ -1,4 +1,4 @@
-var request = require('request');
+var request = require('requestretry');
 var LuisRecognizer = (function () {
     function LuisRecognizer(models) {
         if (typeof models == 'string') {
@@ -56,13 +56,32 @@ var LuisRecognizer = (function () {
         }
     };
     LuisRecognizer.recognize = function (utterance, modelUrl, callback) {
+        function retryStrategy(err, response, body) {
+            // retry request if we get a 429, too many calls
+            return response.statusCode === 429;
+        }
+
+        function delayStrategy(err, response, body) {
+            function randomIntFromInterval(min,max) {
+                return Math.floor(Math.random() * (max - min + 1) + min);
+            }
+
+            return randomIntFromInterval(500, 2000);
+        }
+
         try {
             var uri = modelUrl.trim();
             if (uri.lastIndexOf('&q=') != uri.length - 3) {
                 uri += '&q=';
             }
             uri += encodeURIComponent(utterance || '');
-            request.get(uri, function (err, res, body) {
+            request({
+                url: uri,
+                // The below parameters are specific to request-retry
+                maxAttempts: 5,
+                retryStrategy: retryStrategy,
+                delayStrategy: delayStrategy
+            }, function (err, res, body) {
                 var result;
                 try {
                     if (!err) {
